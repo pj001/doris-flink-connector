@@ -56,6 +56,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
@@ -356,9 +357,22 @@ public abstract class DatabaseSync {
         boolean sync = true;
         if (includingPattern != null) {
             sync = includingPattern.matcher(tableName).matches();
+            if (!sync) {
+                sync =
+                        includingPattern
+                                .matcher(tableName.substring(tableName.indexOf(".") + 1))
+                                .matches();
+            }
         }
         if (excludingPattern != null) {
-            sync = sync && !excludingPattern.matcher(tableName).matches();
+            boolean excluded = excludingPattern.matcher(tableName).matches();
+            if (!excluded) {
+                excluded =
+                        excludingPattern
+                                .matcher(tableName.substring(tableName.indexOf(".") + 1))
+                                .matches();
+            }
+            sync = sync && !excluded;
         }
         LOG.debug("table {} is synchronized? {}", tableName, sync);
         return sync;
@@ -371,6 +385,23 @@ public abstract class DatabaseSync {
                         .map(v -> getTableListPrefix() + "\\." + v)
                         .collect(Collectors.joining("|"));
             } else {
+                Pattern compile =
+                        Pattern.compile(
+                                syncTables.stream()
+                                        .map(s -> String.format("([^|]*\\.%s)", s))
+                                        .collect(Collectors.joining("|")));
+                Matcher matcher = compile.matcher(includingTables);
+
+                List<String> syncTableList = new ArrayList<>();
+
+                while (matcher.find()) {
+                    syncTableList.add(matcher.group());
+                }
+
+                if (!syncTableList.isEmpty()) {
+                    return String.join("|", syncTableList).replace(".", "\\.");
+                }
+
                 return String.format(
                         "(%s)\\.(%s)", getTableListPrefix(), String.join("|", syncTables));
             }
@@ -379,13 +410,30 @@ public abstract class DatabaseSync {
             if (includingTables == null) {
                 includingTables = ".*";
             }
-            String includingPattern =
-                    String.format("(%s)\\.(%s)", getTableListPrefix(), includingTables);
+
+            Pattern compile = Pattern.compile(getTableListPrefix());
+            boolean matchesIncludingTables = compile.matcher(includingTables).find();
+            String includingPattern;
+            if (matchesIncludingTables) {
+                includingPattern = includingTables.replace(".", "\\.");
+            } else {
+                includingPattern =
+                        String.format("(%s)\\.(%s)", getTableListPrefix(), includingTables);
+            }
+
             if (StringUtils.isNullOrWhitespaceOnly(excludingTables)) {
                 return includingPattern;
             } else {
-                String excludingPattern =
-                        String.format("?!(%s\\.(%s))$", getTableListPrefix(), excludingTables);
+                boolean matchesExcludingTables = compile.matcher(excludingTables).find();
+
+                String excludingPattern;
+                if (matchesExcludingTables) {
+                    excludingPattern = String.format("?!(%s)$", excludingTables.replace(".", "\\"));
+                } else {
+                    excludingPattern =
+                            String.format("?!(%s)\\.(%s)$", getTableListPrefix(), excludingTables);
+                }
+
                 return String.format("(%s)(%s)", excludingPattern, includingPattern);
             }
         }

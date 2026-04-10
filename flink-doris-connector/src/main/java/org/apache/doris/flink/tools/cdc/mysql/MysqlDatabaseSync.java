@@ -114,7 +114,11 @@ public class MysqlDatabaseSync extends DatabaseSync {
                             while (tables.next()) {
                                 String tableName = tables.getString(DatabaseSyncConfig.TABLE_NAME);
                                 String tableComment = tables.getString(DatabaseSyncConfig.REMARKS);
-                                if (!isSyncNeeded(tableName)) {
+
+                                String fullTableName =
+                                        String.format("%s.%s", tableCatalog, tableName);
+
+                                if (!isSyncNeeded(fullTableName)) {
                                     continue;
                                 }
                                 SourceSchema sourceSchema =
@@ -141,6 +145,9 @@ public class MysqlDatabaseSync extends DatabaseSync {
         String databaseName = config.get(MySqlSourceOptions.DATABASE_NAME);
         Preconditions.checkNotNull(databaseName, "database-name in mysql is required");
         String tableName = config.get(MySqlSourceOptions.TABLE_NAME);
+
+        LOG.info("databse name:{},table name:{}",databaseName,tableName);
+
         sourceBuilder
                 .hostname(config.get(MySqlSourceOptions.HOSTNAME))
                 .port(config.get(MySqlSourceOptions.PORT))
